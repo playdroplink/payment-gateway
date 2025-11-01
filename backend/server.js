@@ -7,6 +7,7 @@ const bodyParser = require('body-parser');
 const axios = require('axios');
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
+const horizonService = require('./services/horizon');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -87,7 +88,9 @@ db.serialize(() => {
       wallet_address TEXT UNIQUE NOT NULL,
       pi_uid TEXT,
       username TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      payment_wallet_address TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `);
 
@@ -499,6 +502,76 @@ app.post('/api/payments/:piPaymentId/complete', async (req, res) => {
   }
 
   try {
+    // Get payment record first to verify recipient
+    const payment = await new Promise((resolve, reject) => {
+      db.get(
+        'SELECT * FROM payments WHERE pi_payment_id = ?',
+        [piPaymentId],
+        (err, row) => {
+          if (err) reject(err);
+          else resolve(row);
+        }
+      );
+    });
+
+    if (!payment) {
+      return res.status(404).json({ error: 'Payment record not found' });
+    }
+
+    // Get checkout link to find merchant address
+    const link = await new Promise((resolve, reject) => {
+      db.get(
+        'SELECT * FROM checkout_links WHERE link_id = ?',
+        [payment.link_id],
+        (err, row) => {
+          if (err) reject(err);
+          else resolve(row);
+        }
+      );
+    });
+
+    if (!link) {
+      return res.status(404).json({ error: 'Checkout link not found' });
+    }
+
+    // Get merchant payment wallet address
+    const merchant = await new Promise((resolve, reject) => {
+      db.get(
+        'SELECT payment_wallet_address FROM merchants WHERE wallet_address = ?',
+        [link.merchant_address],
+        (err, row) => {
+          if (err) reject(err);
+          else resolve(row);
+        }
+      );
+    });
+
+    const recipientWallet = merchant?.payment_wallet_address || link.merchant_address;
+
+    // Verify transaction on-chain using Horizon API
+    let chainVerification = null;
+    try {
+      chainVerification = await horizonService.verifyPaymentTransaction(
+        txid,
+        recipientWallet,
+        parseFloat(payment.amount)
+      );
+
+      if (!chainVerification.verified) {
+        console.warn('Chain verification failed:', chainVerification.error);
+        // Continue with Pi API completion but log the issue
+      } else {
+        console.log('Payment verified on-chain:', {
+          txid,
+          recipient: chainVerification.recipient,
+          amount: chainVerification.amount
+        });
+      }
+    } catch (verifyError) {
+      console.error('Error verifying transaction on-chain:', verifyError);
+      // Continue with Pi API completion even if chain verification fails
+    }
+
     // Call Pi Platform API to complete the payment
     const response = await axios.post(
       `${PI_API_BASE}/payments/${piPaymentId}/complete`,
@@ -513,38 +586,33 @@ app.post('/api/payments/:piPaymentId/complete', async (req, res) => {
 
     // Verify payment status from Pi API response
     if (response.data.status.developer_completed) {
-      // Get payment record to update stock
-      db.get(
-        'SELECT * FROM payments WHERE pi_payment_id = ?',
-        [piPaymentId],
-        (err, payment) => {
-          if (!err && payment) {
-            // Update stock if applicable
-            db.get(
-              'SELECT * FROM checkout_links WHERE link_id = ?',
-              [payment.link_id],
-              (linkErr, link) => {
-                if (!linkErr && link && link.stock > 0) {
-                  db.run(
-                    'UPDATE checkout_links SET current_stock = current_stock - 1 WHERE link_id = ?',
-                    [payment.link_id],
-                    (stockErr) => {
-                      if (stockErr) {
-                        console.error('Error updating stock:', stockErr);
-                      }
-                    }
-                  );
-                }
-              }
-            );
+      // Update stock if applicable
+      if (link && link.stock > 0) {
+        db.run(
+          'UPDATE checkout_links SET current_stock = current_stock - 1 WHERE link_id = ?',
+          [payment.link_id],
+          (stockErr) => {
+            if (stockErr) {
+              console.error('Error updating stock:', stockErr);
+            }
           }
-        }
-      );
+        );
+      }
 
-      // Update payment status in database
+      // Update payment status in database with chain verification info
+      const metadata = JSON.parse(payment.metadata || '{}');
+      if (chainVerification && chainVerification.verified) {
+        metadata.chain_verified = true;
+        metadata.chain_verification_time = new Date().toISOString();
+      } else {
+        metadata.chain_verified = false;
+      }
+
       db.run(
-        'UPDATE payments SET status = ?, tx_hash = ?, developer_completed = 1, paid_at = CURRENT_TIMESTAMP WHERE pi_payment_id = ?',
-        ['completed', txid, piPaymentId],
+        `UPDATE payments 
+         SET status = ?, tx_hash = ?, developer_completed = 1, paid_at = CURRENT_TIMESTAMP, metadata = ? 
+         WHERE pi_payment_id = ?`,
+        ['completed', txid, JSON.stringify(metadata), piPaymentId],
         (err) => {
           if (err) {
             console.error('Error updating payment completion status:', err);
@@ -553,7 +621,10 @@ app.post('/api/payments/:piPaymentId/complete', async (req, res) => {
       );
     }
 
-    res.json(response.data);
+    res.json({
+      ...response.data,
+      chain_verification: chainVerification
+    });
   } catch (error) {
     console.error('Error completing payment:', error.response?.data || error.message);
     res.status(error.response?.status || 500).json({
@@ -662,15 +733,29 @@ app.post('/api/auth/verify', async (req, res) => {
       }
     });
 
-    // Store/update merchant info
-    db.run(
-      `INSERT OR REPLACE INTO merchants (wallet_address, pi_uid, username) 
-       VALUES (?, ?, ?)`,
-      [response.data.uid || uid, response.data.uid || uid, username || response.data.username],
-      (err) => {
+    const merchantId = response.data.uid || uid;
+    
+    // Check if merchant exists and get payment wallet if set
+    db.get(
+      'SELECT payment_wallet_address FROM merchants WHERE wallet_address = ?',
+      [merchantId],
+      (err, existing) => {
         if (err) {
-          console.error('Error storing merchant:', err);
+          console.error('Error checking merchant:', err);
         }
+        
+        // Store/update merchant info (preserve payment_wallet_address if exists)
+        const paymentWallet = existing?.payment_wallet_address || null;
+        db.run(
+          `INSERT OR REPLACE INTO merchants (wallet_address, pi_uid, username, payment_wallet_address, updated_at) 
+           VALUES (?, ?, ?, COALESCE(?, payment_wallet_address), CURRENT_TIMESTAMP)`,
+          [merchantId, merchantId, username || response.data.username, paymentWallet],
+          (err) => {
+            if (err) {
+              console.error('Error storing merchant:', err);
+            }
+          }
+        );
       }
     );
 
@@ -684,13 +769,222 @@ app.post('/api/auth/verify', async (req, res) => {
   }
 });
 
+// Get merchant info including payment wallet
+app.get('/api/merchants/:merchantAddress', (req, res) => {
+  const { merchantAddress } = req.params;
+
+  db.get(
+    'SELECT wallet_address, pi_uid, username, payment_wallet_address, created_at, updated_at FROM merchants WHERE wallet_address = ?',
+    [merchantAddress],
+    (err, row) => {
+      if (err) {
+        return res.status(500).json({ error: err.message });
+      }
+      if (!row) {
+        return res.status(404).json({ error: 'Merchant not found' });
+      }
+      res.json(row);
+    }
+  );
+});
+
+// Update merchant payment wallet address
+app.put('/api/merchants/:merchantAddress/wallet', async (req, res) => {
+  const { merchantAddress } = req.params;
+  const { payment_wallet_address } = req.body;
+
+  if (!payment_wallet_address || !payment_wallet_address.trim()) {
+    return res.status(400).json({ error: 'Payment wallet address is required' });
+  }
+
+  // Basic validation - Pi wallet addresses are typically alphanumeric
+  const walletPattern = /^[A-Za-z0-9]+$/;
+  if (!walletPattern.test(payment_wallet_address.trim())) {
+    return res.status(400).json({ error: 'Invalid wallet address format' });
+  }
+
+  // Verify wallet address exists on Pi Network using Horizon API
+  try {
+    const accountExists = await horizonService.accountExists(payment_wallet_address.trim());
+    if (!accountExists) {
+      return res.status(400).json({ 
+        error: 'Wallet address does not exist on Pi Network',
+        suggestion: 'Please verify the wallet address is correct'
+      });
+    }
+  } catch (verifyError) {
+    console.error('Error verifying wallet address:', verifyError);
+    // Continue anyway - Horizon API might be temporarily unavailable
+  }
+
+  db.run(
+    `UPDATE merchants 
+     SET payment_wallet_address = ?, updated_at = CURRENT_TIMESTAMP 
+     WHERE wallet_address = ?`,
+    [payment_wallet_address.trim(), merchantAddress],
+    function(err) {
+      if (err) {
+        console.error('Error updating payment wallet:', err);
+        return res.status(500).json({ error: 'Failed to update payment wallet address', details: err.message });
+      }
+      if (this.changes === 0) {
+        // Merchant doesn't exist, create it
+        db.run(
+          'INSERT INTO merchants (wallet_address, payment_wallet_address) VALUES (?, ?)',
+          [merchantAddress, payment_wallet_address.trim()],
+          function(insertErr) {
+            if (insertErr) {
+              return res.status(500).json({ error: 'Failed to create merchant record', details: insertErr.message });
+            }
+            res.json({ 
+              message: 'Payment wallet address set successfully',
+              wallet_address: merchantAddress,
+              payment_wallet_address: payment_wallet_address.trim()
+            });
+          }
+        );
+      } else {
+        res.json({ 
+          message: 'Payment wallet address updated successfully',
+          wallet_address: merchantAddress,
+          payment_wallet_address: payment_wallet_address.trim()
+        });
+      }
+    }
+  );
+});
+
+// Get account information from Pi Network Horizon API
+app.get('/api/horizon/account/:accountId', async (req, res) => {
+  const { accountId } = req.params;
+
+  try {
+    const account = await horizonService.getAccount(accountId);
+    res.json(account);
+  } catch (error) {
+    res.status(error.message === 'Account not found' ? 404 : 500).json({
+      error: error.message
+    });
+  }
+});
+
+// Get account balance
+app.get('/api/horizon/account/:accountId/balance', async (req, res) => {
+  const { accountId } = req.params;
+
+  try {
+    const balance = await horizonService.getBalance(accountId);
+    res.json({ account: accountId, balance });
+  } catch (error) {
+    res.status(500).json({
+      error: error.message
+    });
+  }
+});
+
+// Get account transactions
+app.get('/api/horizon/account/:accountId/transactions', async (req, res) => {
+  const { accountId } = req.params;
+  const { limit = 10, cursor, order = 'desc' } = req.query;
+
+  try {
+    const transactions = await horizonService.getAccountTransactions(accountId, {
+      limit: parseInt(limit),
+      cursor,
+      order
+    });
+    res.json(transactions);
+  } catch (error) {
+    res.status(500).json({
+      error: error.message
+    });
+  }
+});
+
+// Get account payments (received)
+app.get('/api/horizon/account/:accountId/payments', async (req, res) => {
+  const { accountId } = req.params;
+  const { limit = 10, cursor } = req.query;
+
+  try {
+    const payments = await horizonService.getAccountPayments(accountId, {
+      limit: parseInt(limit),
+      cursor
+    });
+    res.json(payments);
+  } catch (error) {
+    res.status(500).json({
+      error: error.message
+    });
+  }
+});
+
+// Verify a transaction
+app.post('/api/horizon/verify-transaction', async (req, res) => {
+  const { txid, recipient, amount } = req.body;
+
+  if (!txid || !recipient) {
+    return res.status(400).json({
+      error: 'Transaction hash (txid) and recipient are required'
+    });
+  }
+
+  try {
+    const verification = await horizonService.verifyPaymentTransaction(
+      txid,
+      recipient,
+      amount ? parseFloat(amount) : null
+    );
+    res.json(verification);
+  } catch (error) {
+    res.status(500).json({
+      error: error.message
+    });
+  }
+});
+
+// Get transaction details
+app.get('/api/horizon/transaction/:txid', async (req, res) => {
+  const { txid } = req.params;
+
+  try {
+    const transaction = await horizonService.getTransaction(txid);
+    res.json(transaction);
+  } catch (error) {
+    res.status(error.message === 'Transaction not found' ? 404 : 500).json({
+      error: error.message
+    });
+  }
+});
+
+// Get network info
+app.get('/api/horizon/network', async (req, res) => {
+  try {
+    const networkInfo = await horizonService.getNetworkInfo();
+    res.json(networkInfo);
+  } catch (error) {
+    res.status(500).json({
+      error: error.message
+    });
+  }
+});
+
 // Health check
-app.get('/api/health', (req, res) => {
+app.get('/api/health', async (req, res) => {
+  let horizonStatus = 'unknown';
+  try {
+    const networkInfo = await horizonService.getNetworkInfo();
+    horizonStatus = 'connected';
+  } catch (error) {
+    horizonStatus = 'disconnected';
+  }
+
   res.json({ 
     status: 'ok', 
     timestamp: new Date().toISOString(),
     pi_api_configured: !!PI_API_KEY,
-    database: 'connected'
+    database: 'connected',
+    horizon_api: horizonStatus
   });
 });
 

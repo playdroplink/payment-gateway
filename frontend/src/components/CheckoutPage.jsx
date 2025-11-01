@@ -140,11 +140,30 @@ function CheckoutPage() {
     setPaymentError(null);
 
     try {
+      // Get merchant's payment wallet address
+      let recipientWallet = null;
+      try {
+        const merchantResponse = await axios.get(`${API_BASE}/merchants/${link.merchant_address}`);
+        recipientWallet = merchantResponse.data.payment_wallet_address;
+        
+        if (!recipientWallet) {
+          setPaymentError('Merchant has not set up a payment wallet address. Please contact the merchant.');
+          setProcessing(false);
+          return;
+        }
+      } catch (error) {
+        console.error('Error fetching merchant wallet:', error);
+        setPaymentError('Failed to retrieve merchant payment information. Please try again.');
+        setProcessing(false);
+        return;
+      }
+
       // Create payment using Pi SDK
       window.Pi.createPayment(
         {
           amount: parseFloat(link.amount),
           memo: `Payment for ${link.product_name}`,
+          recipient: recipientWallet,
           metadata: {
             link_id: linkId,
             product_name: link.product_name,

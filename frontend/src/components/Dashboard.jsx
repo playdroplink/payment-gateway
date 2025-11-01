@@ -6,12 +6,28 @@ import { API_BASE } from '../config/api';
 function Dashboard({ merchantAddress }) {
   const [links, setLinks] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [merchantWallet, setMerchantWallet] = useState(null);
 
   useEffect(() => {
     if (merchantAddress) {
       loadLinks();
+      loadMerchantWallet();
     }
   }, [merchantAddress]);
+
+  const loadMerchantWallet = async () => {
+    if (!merchantAddress) return;
+    
+    try {
+      const response = await axios.get(`${API_BASE}/merchants/${merchantAddress}`);
+      setMerchantWallet(response.data.payment_wallet_address);
+    } catch (error) {
+      // Silently fail - merchant might not exist yet
+      if (error.response?.status !== 404) {
+        console.error('Error loading merchant wallet:', error);
+      }
+    }
+  };
 
   const loadLinks = async () => {
     if (!merchantAddress) return;
@@ -88,7 +104,14 @@ function Dashboard({ merchantAddress }) {
   return (
     <div className="dashboard">
       <div className="dashboard-header">
-        <h2>Checkout Links</h2>
+        <div>
+          <h2>Checkout Links</h2>
+          {merchantWallet ? (
+            <p className="wallet-info">Payment Wallet: <span className="wallet-address">{merchantWallet}</span></p>
+          ) : (
+            <p className="wallet-warning">⚠️ No payment wallet set. Go to Settings to configure.</p>
+          )}
+        </div>
         <button onClick={loadLinks} className="refresh-btn">Refresh</button>
       </div>
 

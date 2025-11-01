@@ -4,6 +4,7 @@ import axios from 'axios';
 import CheckoutLinkCreator from './components/CheckoutLinkCreator';
 import CheckoutPage from './components/CheckoutPage';
 import Dashboard from './components/Dashboard';
+import MerchantSettings from './components/MerchantSettings';
 import './App.css';
 
 function AppContent() {
@@ -80,6 +81,12 @@ function AppContent() {
                   >
                     Create Link
                   </button>
+                  <button 
+                    className={currentPage === 'settings' ? 'active' : ''}
+                    onClick={() => setCurrentPage('settings')}
+                  >
+                    Settings
+                  </button>
                 </div>
                 {authenticated && user ? (
                   <div className="user-badge">
@@ -109,6 +116,12 @@ function AppContent() {
                 <CheckoutLinkCreator 
                   merchantAddress={merchantAddress}
                   onLinkCreated={() => setCurrentPage('dashboard')}
+                />
+              )}
+              {currentPage === 'settings' && (
+                <MerchantSettings 
+                  merchantAddress={merchantAddress}
+                  user={user}
                 />
               )}
             </main>

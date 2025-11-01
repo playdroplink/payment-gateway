@@ -1,0 +1,236 @@
+.merchant-settings {
+  width: 100%;
+  animation: fadeIn 0.3s ease-in;
+}
+
+.merchant-settings-loading {
+  text-align: center;
+  padding: var(--spacing-2xl);
+  color: var(--text-tertiary);
+}
+
+.settings-card {
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-xl);
+  padding: var(--spacing-xl);
+  box-shadow: var(--shadow-md);
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.settings-card h2 {
+  font-size: 1.75rem;
+  font-weight: 700;
+  background: var(--gradient-blue);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  letter-spacing: -0.02em;
+  margin-bottom: var(--spacing-sm);
+}
+
+.settings-description {
+  color: var(--text-tertiary);
+  font-size: 0.95rem;
+  margin-bottom: var(--spacing-xl);
+  line-height: 1.6;
+}
+
+.wallet-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg);
+}
+
+.wallet-input-group {
+  display: flex;
+  gap: var(--spacing-sm);
+}
+
+.wallet-input {
+  flex: 1;
+  padding: var(--spacing-md);
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: 1rem;
+  font-family: 'Fira Code', 'Monaco', 'Courier New', monospace;
+  transition: all var(--transition-base);
+}
+
+.wallet-input:focus {
+  outline: none;
+  border-color: var(--primary-blue);
+  box-shadow: 0 0 0 3px rgba(9, 105, 218, 0.1);
+}
+
+.wallet-input::placeholder {
+  color: var(--text-muted);
+  font-family: inherit;
+}
+
+.use-pi-wallet-btn {
+  padding: var(--spacing-md) var(--spacing-lg);
+  background: var(--gradient-blue);
+  border: none;
+  border-radius: var(--radius-md);
+  color: #ffffff;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-base);
+  white-space: nowrap;
+  font-size: 0.9rem;
+}
+
+.use-pi-wallet-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+
+.input-hint {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin-top: var(--spacing-xs);
+}
+
+.wallet-validation {
+  margin-top: var(--spacing-xs);
+  min-height: 1.5rem;
+  font-size: 0.85rem;
+}
+
+.validation-checking {
+  color: var(--text-tertiary);
+  font-style: italic;
+}
+
+.validation-valid {
+  color: var(--success-green);
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.validation-invalid {
+  color: var(--error-red);
+  font-weight: 500;
+}
+
+.wallet-balance {
+  color: var(--text-tertiary);
+  font-weight: 400;
+  font-size: 0.9em;
+}
+
+.wallet-input.valid {
+  border-color: var(--success-green);
+  box-shadow: 0 0 0 2px rgba(26, 127, 55, 0.1);
+}
+
+.wallet-input.invalid {
+  border-color: var(--error-red);
+  box-shadow: 0 0 0 2px rgba(207, 34, 46, 0.1);
+}
+
+.settings-message {
+  padding: var(--spacing-md);
+  border-radius: var(--radius-md);
+  font-size: 0.95rem;
+  font-weight: 500;
+}
+
+.settings-message.success {
+  background: rgba(26, 127, 55, 0.1);
+  border: 1px solid rgba(26, 127, 55, 0.2);
+  color: var(--success-green);
+}
+
+.settings-message.error {
+  background: rgba(207, 34, 46, 0.1);
+  border: 1px solid rgba(207, 34, 46, 0.2);
+  color: var(--error-red);
+}
+
+.current-wallet-info {
+  padding: var(--spacing-md);
+  background: var(--secondary-bg);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+}
+
+.wallet-display {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.wallet-label {
+  font-size: 0.85rem;
+  color: var(--text-tertiary);
+  font-weight: 500;
+}
+
+.wallet-value {
+  font-family: 'Fira Code', 'Monaco', 'Courier New', monospace;
+  font-size: 0.95rem;
+  color: var(--text-primary);
+  word-break: break-all;
+  padding: var(--spacing-sm);
+  background: var(--card-bg);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+}
+
+.wallet-warning {
+  color: var(--warning-yellow);
+  font-size: 0.9rem;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.save-wallet-btn {
+  width: 100%;
+  padding: var(--spacing-lg);
+  background: var(--gradient-blue);
+  border: none;
+  border-radius: var(--radius-md);
+  color: #ffffff;
+  font-size: 1.1rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all var(--transition-base);
+  box-shadow: var(--shadow-lg);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.save-wallet-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-xl), var(--shadow-glow);
+}
+
+.save-wallet-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+@media (max-width: 768px) {
+  .settings-card {
+    padding: var(--spacing-md);
+  }
+
+  .wallet-input-group {
+    flex-direction: column;
+  }
+
+  .use-pi-wallet-btn {
+    width: 100%;
+  }
+}
+

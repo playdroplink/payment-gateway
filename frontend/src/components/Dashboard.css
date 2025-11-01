@@ -32,6 +32,30 @@
   -webkit-text-fill-color: transparent;
   background-clip: text;
   letter-spacing: -0.02em;
+  margin-bottom: var(--spacing-xs);
+}
+
+.wallet-info {
+  font-size: 0.9rem;
+  color: var(--text-tertiary);
+  margin-top: var(--spacing-xs);
+}
+
+.wallet-address {
+  font-family: 'Fira Code', 'Monaco', 'Courier New', monospace;
+  font-size: 0.85rem;
+  color: var(--text-primary);
+  background: var(--secondary-bg);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+}
+
+.wallet-warning {
+  font-size: 0.9rem;
+  color: var(--warning-yellow);
+  margin-top: var(--spacing-xs);
+  font-weight: 500;
 }
 
 .refresh-btn {
